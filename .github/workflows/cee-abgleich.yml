@@ -1,0 +1,93 @@
+# CEE: wöchentlicher Abgleich mit tangency-labs/solidcraft (ADR-068).
+# Nimmt den neuesten Stand des Originals, dessen eigene Prüfung grün war, mischt ihn ein, baut und prüft
+# und übernimmt ihn nur bei Erfolg. Bei Konflikt oder roter Prüfung entsteht stattdessen ein Hinweis (Issue).
+name: CEE Abgleich
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      uebernehmen:
+        description: "Bei Erfolg wirklich nach main übernehmen (nein = nur Probelauf)"
+        default: "ja"
+permissions:
+  contents: write
+  issues: write
+concurrency: cee-abgleich
+jobs:
+  abgleich:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ORIGINAL: tangency-labs/solidcraft
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Neuesten grünen Stand des Originals finden
+        id: finde
+        run: |
+          set -euo pipefail
+          for sha in $(gh api "repos/$ORIGINAL/commits?per_page=40" --jq '.[].sha'); do
+            erg=$(gh api "repos/$ORIGINAL/commits/$sha/check-runs?per_page=100" \
+              --jq '[.total_count, ([.check_runs[]|select(.status!="completed")]|length), ([.check_runs[]|select(.conclusion=="failure" or .conclusion=="cancelled" or .conclusion=="timed_out")]|length)]|@tsv')
+            read -r gesamt offen rot <<<"$erg"
+            if [ "$gesamt" -gt 0 ] && [ "$offen" -eq 0 ] && [ "$rot" -eq 0 ]; then
+              echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "Grüner Stand: $sha"; exit 0
+            fi
+          done
+          echo "Kein grüner Stand in den letzten 40 Änderungen"; exit 1
+      - name: Einmischen
+        id: mischen
+        run: |
+          set -euo pipefail
+          git config user.name "CEE Abgleich"; git config user.email "abgleich@users.noreply.github.com"
+          git remote add original "https://github.com/$ORIGINAL.git"
+          git fetch -q original "${{ steps.finde.outputs.sha }}"
+          if git merge-base --is-ancestor "${{ steps.finde.outputs.sha }}" HEAD; then
+            echo "neu=nein" >> "$GITHUB_OUTPUT"; echo "Schon auf dem neuesten grünen Stand."; exit 0
+          fi
+          echo "neu=ja" >> "$GITHUB_OUTPUT"
+          git merge --no-ff --no-commit "${{ steps.finde.outputs.sha }}" || { git merge --abort; echo "Konflikt beim Einmischen"; exit 1; }
+          # Abläufe des Originals gehören nicht in diese Kopie (eigene Läufer, Veröffentlichung); nur cee-*.yml bleiben.
+          git ls-files .github/workflows | grep -v '/cee-' | xargs -r git rm -q -f
+          git commit -q -m "Abgleich mit $ORIGINAL (${{ steps.finde.outputs.sha }})"
+      - name: Rust bereitstellen
+        if: steps.mischen.outputs.neu == 'ja'
+        run: rustup toolchain install stable --profile minimal && rustup default stable && cargo --version
+      - uses: actions/cache@v4
+        if: steps.mischen.outputs.neu == 'ja'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cee-abgleich-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cee-abgleich-
+      - name: Lizenzen prüfen
+        if: steps.mischen.outputs.neu == 'ja'
+        run: cargo xtask licences --check
+      - name: Bauen (Befehlszeile und MCP)
+        if: steps.mischen.outputs.neu == 'ja'
+        run: cargo build --locked --release -p solidcraft-cli
+      - name: CEE-Prüfer auf den Beispielteilen
+        if: steps.mischen.outputs.neu == 'ja'
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --heads https://github.com/lobito42/cee.git main >/dev/null; then exit 0; fi
+          git clone -q --depth 1 https://github.com/lobito42/cee.git /tmp/cee
+          if [ ! -d /tmp/cee/pruefer/cee_pruefer ]; then echo "Prüfer noch nicht auf main des CEE-Projekts – übersprungen"; exit 0; fi
+          cd /tmp/cee/pruefer
+          for teil in ../parts/solidcraft/*.json; do
+            CEE_SOLIDCRAFT="$GITHUB_WORKSPACE/target/release/solidcraft-cli" \
+              python3 -m cee_pruefer "$teil" --bericht "/tmp/$(basename "$teil").html"
+          done
+      - name: Übernehmen
+        if: steps.mischen.outputs.neu == 'ja' && github.event.inputs.uebernehmen != 'nein'
+        run: git push origin HEAD:main
+      - name: Hinweis bei Misserfolg
+        if: failure()
+        run: |
+          gh issue create --title "Abgleich mit SolidCraft braucht einen Blick" \
+            --body "Der Abgleich ($(date -u +%F)) ist gescheitert: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
