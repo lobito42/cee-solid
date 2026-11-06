@@ -58,7 +58,7 @@ jobs:
             git diff --name-only --diff-filter=U | xargs -r git rm -q -f
           fi
           # Abläufe des Originals gehören nicht in diese Kopie (eigene Läufer, Veröffentlichung); nur cee-*.yml bleiben.
-          git ls-files .github/workflows | grep -v '/cee-' | xargs -r git rm -q -f
+          { git ls-files .github/workflows | grep -v '/cee-' || true; } | xargs -r git rm -q -f
           git commit -q -m "Abgleich mit $ORIGINAL (${{ steps.finde.outputs.sha }})"
       - name: Rust bereitstellen
         if: steps.mischen.outputs.neu == 'ja'
