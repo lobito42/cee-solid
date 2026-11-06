@@ -49,7 +49,14 @@ jobs:
             echo "neu=nein" >> "$GITHUB_OUTPUT"; echo "Schon auf dem neuesten grünen Stand."; exit 0
           fi
           echo "neu=ja" >> "$GITHUB_OUTPUT"
-          git merge --no-ff --no-commit "${{ steps.finde.outputs.sha }}" || { git merge --abort; echo "Konflikt beim Einmischen"; exit 1; }
+          if ! git merge --no-ff --no-commit "${{ steps.finde.outputs.sha }}"; then
+            # Konflikte nur in Abläufen des Originals sind erwartet (hier gelöscht): einfach weglassen.
+            fremd=$(git diff --name-only --diff-filter=U | grep -v '^\.github/workflows/' || true)
+            if [ -n "$fremd" ]; then
+              echo "Konflikt in: $fremd"; git merge --abort; exit 1
+            fi
+            git diff --name-only --diff-filter=U | xargs -r git rm -q -f
+          fi
           # Abläufe des Originals gehören nicht in diese Kopie (eigene Läufer, Veröffentlichung); nur cee-*.yml bleiben.
           git ls-files .github/workflows | grep -v '/cee-' | xargs -r git rm -q -f
           git commit -q -m "Abgleich mit $ORIGINAL (${{ steps.finde.outputs.sha }})"
