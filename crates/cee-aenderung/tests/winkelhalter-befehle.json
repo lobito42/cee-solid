@@ -1,0 +1,23 @@
+{"commands": [
+  {"command": "parameters.add", "params": {"name": "breite", "expression": "60 mm", "comment": "[40 mm .. 120 mm] Platz für zwei Schrauben nebeneinander"}},
+  {"command": "parameters.add", "params": {"name": "tiefe", "expression": "40 mm", "comment": "[12 mm .. 80 mm] Auflagefläche"}},
+  {"command": "parameters.add", "params": {"name": "dicke", "expression": "8 mm", "comment": "[2 mm .. 16 mm] Wandstärke von Platte und Steg"}},
+  {"command": "parameters.add", "params": {"name": "steg_hoehe", "expression": "50 mm", "comment": "[20 mm .. 100 mm]"}},
+  {"command": "parameters.add", "params": {"name": "rand", "expression": "10 mm", "comment": "[fest] Mindestabstand für den Schraubenkopf"}},
+
+  {"command": "sketch.create", "params": {"plane": "XY", "name": "Grundplatte"}},
+  {"command": "sketch.rectangle.two_point", "params": {"p0": ["-breite/2", "-tiefe/2"], "p1": ["breite/2", "tiefe/2"]}},
+  {"command": "sketch.finish", "params": {}},
+  {"command": "solid.extrude", "params": {"distance": "dicke", "body_name": "Halter"}},
+
+  {"command": "sketch.create", "params": {"plane": "XY", "name": "Steg"}},
+  {"command": "sketch.rectangle.two_point", "params": {"p0": ["-breite/2", "-tiefe/2"], "p1": ["breite/2", "-tiefe/2 + dicke"]}},
+  {"command": "sketch.finish", "params": {}},
+  {"command": "solid.extrude", "params": {"distance": "dicke + steg_hoehe", "operation": "join"}},
+
+  {"command": "sketch.create", "params": {"plane": "XY", "name": "Bohrbild"}},
+  {"command": "sketch.point", "params": {"point": ["-(breite/2 - rand)", "dicke/2"]}},
+  {"command": "sketch.point", "params": {"point": ["breite/2 - rand", "dicke/2"]}},
+  {"command": "sketch.finish", "params": {}},
+  {"command": "solid.hole", "params": {"sketch": "Bohrbild", "clearance": "M6"}}
+]}

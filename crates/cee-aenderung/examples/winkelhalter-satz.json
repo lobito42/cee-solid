@@ -1,0 +1,75 @@
+{
+  "aenderungen": [
+    {
+      "art": "groesse_gesetzt",
+      "nachher": {
+        "comment": "[2 mm .. 16 mm] Wandstärke von Platte und Steg",
+        "expr": "10 mm",
+        "model": false,
+        "name": "dicke",
+        "unit": "mm"
+      },
+      "name": "dicke",
+      "vorher": {
+        "comment": "[2 mm .. 16 mm] Wandstärke von Platte und Steg",
+        "expr": "8 mm",
+        "model": false,
+        "name": "dicke",
+        "unit": "mm"
+      }
+    },
+    {
+      "art": "schritt_eingefuegt",
+      "id": 7,
+      "nach": 6,
+      "schritt": {
+        "edge_names": [
+          "F2:side:l3|F2:top"
+        ],
+        "edge_refs": [
+          {
+            "dir": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "max": [
+              30.0,
+              20.0,
+              58.0
+            ],
+            "min": [
+              -30.0,
+              -20.0,
+              0.0
+            ]
+          }
+        ],
+        "edges": [
+          [
+            0.0,
+            20.0,
+            8.0
+          ]
+        ],
+        "id": 7,
+        "name": "Kante vorn",
+        "param_names": [
+          "d4"
+        ],
+        "radius": "2 mm",
+        "suppressed": false,
+        "type": "fillet"
+      }
+    },
+    {
+      "art": "eigenschaft",
+      "nachher": 8,
+      "pfad": "/next_id",
+      "vorher": 7
+    }
+  ],
+  "ausgangsstand": "sha256:38336dad138f92a1edd7e9399ca5d694faf6bdf1396ff77eae9c46cf0fe1beff",
+  "version": 1,
+  "zielstand": "sha256:4a2626519bf835427e6ba539cd953fce48bb41ce7d6cac390ab54cc656fcad19"
+}

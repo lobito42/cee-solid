@@ -60,6 +60,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("gpu", Class::Layer(5)),
     ("mcp", Class::Layer(5)),
     ("testkit", Class::Testkit),
+    // CEE's change sets over saved designs (the CEE fork's own crate; its tests build designs with the engine)
+    ("cee-aenderung", Class::Layer(5)),
     // apps and tooling
     ("solidcraft", Class::Exempt),
     ("cli", Class::Exempt),
