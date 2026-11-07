@@ -1,0 +1,24 @@
+[package]
+name = "cee-entwurf"
+description = "CEE: drafts (Entwürfe) of a SolidCraft design offline: a history of change sets in a folder, three-way merge and a checker run on the result"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "cee-entwurf"
+path = "src/bin/cee-entwurf.rs"
+
+[dependencies]
+cee-aenderung = { path = "../cee-aenderung" }
+solidcraft-doc = { workspace = true }
+# The checker builds the merged design again with SolidCraft's own session.
+solidcraft-engine = { workspace = true }
+solidcraft-io = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

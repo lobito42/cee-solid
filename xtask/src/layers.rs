@@ -62,6 +62,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("testkit", Class::Testkit),
     // CEE's change sets over saved designs (the CEE fork's own crate; its tests build designs with the engine)
     ("cee-aenderung", Class::Layer(5)),
+    // CEE's drafts offline: a history of change sets, three-way merge, a checker run with the engine
+    ("cee-entwurf", Class::Layer(5)),
     // apps and tooling
     ("solidcraft", Class::Exempt),
     ("cli", Class::Exempt),
@@ -72,7 +74,8 @@ pub const TABLE: &[(&str, Class)] = &[
 /// Explicit orderings *within* a layer (earlier may be used by later).
 /// The viewport draws display plans the GPU crate evaluates and draws with its pipelines; the MCP
 /// server's tests draw screenshots with them. The kernel reads and writes STEP through `step`.
-pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["gpu", "ui-egui"], &["gpu", "mcp"], &["smlib", "kernel"], &["step", "kernel"]];
+pub const INTRA_LAYER_ORDER: &[&[&str]] =
+    &[&["gpu", "ui-egui"], &["gpu", "mcp"], &["smlib", "kernel"], &["step", "kernel"], &["cee-aenderung", "cee-entwurf"]];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {
     let (from, to) = (short_name(from), short_name(to));
