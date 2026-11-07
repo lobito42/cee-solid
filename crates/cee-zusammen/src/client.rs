@@ -25,6 +25,18 @@ use crate::vereinen::{self, Art};
 /// The most undo steps kept.
 pub const MAX_RUECKGAENGIG: usize = 200;
 
+/// How often a command is run when its new step's number was taken by someone else meanwhile.
+pub const MAX_VERSUCHE: u32 = 3;
+
+/// The command a set came from, to run it again when its step number was taken.
+#[derive(Clone)]
+struct Befehl {
+    id: String,
+    params: Value,
+    /// Which run this is (1 for the first).
+    versuch: u32,
+}
+
 /// One of the client's own sets, not yet confirmed.
 struct Offen {
     nr: u64,
@@ -34,6 +46,8 @@ struct Offen {
     aenderungen: Vec<Aenderung>,
     /// The set as sent (from a confirmed state), once it is on the way.
     gesendet: Option<Aenderungssatz>,
+    /// The command that made the set (`None` for undo and redo).
+    befehl: Option<Befehl>,
 }
 
 /// One undo (or redo) step: the changes that take a set of the person's back.
@@ -148,9 +162,18 @@ impl Client {
 
     /// Run a SolidCraft command on the design shown. Returns what it changed, in words.
     pub fn befehl(&mut self, id: &str, params: &Value) -> Result<Vec<String>, String> {
+        let text = self.fuehre_aus(Befehl { id: id.to_owned(), params: params.clone(), versuch: 1 })?;
+        self.vor.clear();
+        Ok(text)
+    }
+
+    /// Run `b` on the design shown and queue its set.
+    fn fuehre_aus(&mut self, b: Befehl) -> Result<Vec<String>, String> {
+        let (id, params) = (b.id.as_str(), &b.params);
         if !self.empfangen() {
             return Err("noch kein Stand vom Server".into());
         }
+        self.session_nachziehen();
         let ergebnis = self.session.execute(id, params).map_err(|e| e.to_string());
         // SolidCraft's own snapshot undo is not used while working together.
         self.session.undo.clear();
@@ -160,9 +183,46 @@ impl Client {
             return Err(e);
         }
         let nachher = (*self.session.doc).clone();
-        let text = self.eigene(nachher, id)?;
-        self.vor.clear();
-        Ok(text)
+        let was = b.id.clone();
+        self.eigene(nachher, &was, Some(b))
+    }
+
+    /// The set `offen` was refused (or no longer fits) because a step number it gives out was
+    /// taken by someone else meanwhile: run its command again on the state shown now, up to
+    /// [`MAX_VERSUCHE`] times. Returns whether it was run again.
+    fn nochmal(&mut self, offen: &Offen) -> bool {
+        let Some(b) = offen.befehl.clone() else { return false };
+        let saetze = offen.gesendet.as_ref().map_or(&offen.aenderungen, |s| &s.aenderungen);
+        let Ok(stand) = baum(&self.bestaetigt) else { return false };
+        let schritte = stand.get("features").and_then(Value::as_array);
+        let vergeben = saetze.iter().any(|a| match a {
+            Aenderung::SchrittEingefuegt { id, schritt, .. } => {
+                schritte.is_some_and(|l| l.iter().any(|f| f.get("id").and_then(Value::as_u64) == Some(*id) && f != schritt))
+            }
+            _ => false,
+        });
+        if !vergeben {
+            return false;
+        }
+        if b.versuch >= MAX_VERSUCHE {
+            self.melde(format!(
+                "„{}“ nicht übernommen: die Schritt-Nummer war {} Mal schon vergeben. Bitte den Befehl noch einmal geben.",
+                b.id, b.versuch
+            ));
+            return false;
+        }
+        let versuch = b.versuch + 1;
+        let id = b.id.clone();
+        match self.fuehre_aus(Befehl { versuch, ..b }) {
+            Ok(_) => {
+                self.melde(format!("Die Schritt-Nummer war inzwischen vergeben: „{id}“ auf dem neuen Stand noch einmal ausgeführt (Versuch {versuch} von {MAX_VERSUCHE})."));
+                true
+            }
+            Err(e) => {
+                self.melde(format!("„{id}“ ließ sich auf dem neuen Stand nicht noch einmal ausführen: {e}"));
+                false
+            }
+        }
     }
 
     /// Whether the server's state has come (the welcome).
@@ -171,7 +231,7 @@ impl Client {
     }
 
     /// Take `nachher` as the next state shown, as one own set. `None` if nothing changed.
-    fn eigene(&mut self, nachher: Document, was: &str) -> Result<Vec<String>, String> {
+    fn eigene(&mut self, nachher: Document, was: &str, befehl: Option<Befehl>) -> Result<Vec<String>, String> {
         let satz = berechne(&self.ansicht, &nachher).map_err(|e| e.to_string())?;
         if satz.aenderungen.is_empty() {
             return Ok(Vec::new());
@@ -184,7 +244,7 @@ impl Client {
         if self.rueck.len() > MAX_RUECKGAENGIG {
             self.rueck.remove(0);
         }
-        self.warten.push_back(Offen { nr, gesehen: self.seq, aenderungen: satz.aenderungen, gesendet: None });
+        self.warten.push_back(Offen { nr, gesehen: self.seq, aenderungen: satz.aenderungen, gesendet: None, befehl });
         self.ansicht = nachher;
         Ok(text)
     }
@@ -227,7 +287,7 @@ impl Client {
             } else {
                 self.rueck.push(gegen);
             }
-            self.warten.push_back(Offen { nr, gesehen: self.seq, aenderungen: satz.aenderungen, gesendet: None });
+            self.warten.push_back(Offen { nr, gesehen: self.seq, aenderungen: satz.aenderungen, gesendet: None, befehl: None });
             self.ansicht = neu;
             self.session_nachziehen();
             return Ok(text);
@@ -277,8 +337,10 @@ impl Client {
                 }
                 Err(grund) => {
                     self.vergiss(offen.nr);
-                    self.melde(format!("Eigene Änderung verworfen: {grund}"));
                     self.ansicht_neu();
+                    if !self.nochmal(&offen) {
+                        self.melde(format!("Eigene Änderung verworfen: {grund}"));
+                    }
                 }
             }
         }
@@ -317,12 +379,12 @@ impl Client {
                     }
                     Err(e) => self.melde(format!("Fehler beim Abgleich: {e}")),
                 }
-                if self.unterwegs.as_ref().is_some_and(|o| o.nr == nr) {
-                    self.unterwegs = None;
-                }
+                let abgelehnt = self.unterwegs.take_if(|o| o.nr == nr);
                 self.vergiss(nr);
-                self.melde(format!("Abgelehnt: {grund}. Der Stand ist wieder der des Servers."));
                 self.ansicht_neu();
+                if !abgelehnt.is_some_and(|o| self.nochmal(&o)) {
+                    self.melde(format!("Abgelehnt: {grund}. Der Stand ist wieder der des Servers."));
+                }
             }
             AnClient::Hinweis { text } => self.melde(format!("Hinweis: {text}")),
             AnClient::Person(p) => {

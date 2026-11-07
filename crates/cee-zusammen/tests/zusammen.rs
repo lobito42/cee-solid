@@ -209,6 +209,59 @@ fn a_step_inserted_while_someone_changes_a_parameter_reaches_both() {
 }
 
 #[test]
+fn two_steps_inserted_at_once_both_land_the_later_command_runs_again() {
+    let mut s = Sim::neu(&["Anna", "Bert"]);
+    let schritte = s.clients[0].teil().features.len();
+    // Both give the new step the same number; Bert's set reaches the server second.
+    s.befehl(0, "solid.fillet", json!({"edges": [[0, 20, 8]], "radius": 2}));
+    s.befehl(1, "solid.chamfer", json!({"edges": [[0, 20, 0]], "distance": 1}));
+    s.sende(0);
+    s.sende(1);
+    s.ruhe();
+    assert!(s.hat_meldung(1, "noch einmal ausgeführt (Versuch 2 von 3)"), "{:?}", s.meldungen[1]);
+    assert!(!s.hat_meldung(1, "Abgelehnt"), "{:?}", s.meldungen[1]);
+    for i in 0..2 {
+        let d = s.clients[i].teil();
+        assert_eq!(d.features.len(), schritte + 2, "client {i} has both new steps");
+        let json = d.to_json();
+        assert!(json.contains("Fillet") || json.contains("fillet"), "client {i}");
+        assert!(json.contains("Chamfer") || json.contains("chamfer"), "client {i}");
+    }
+    s.alle_gleich();
+}
+
+#[test]
+fn a_command_whose_step_number_is_taken_every_time_gives_up_after_three_runs() {
+    let mut s = Sim::neu(&["Anna", "Bert"]);
+    // Bert's command is run again on each refusal; Anna takes the new number first each time.
+    s.befehl(1, "solid.chamfer", json!({"edges": [[0, 20, 8]], "distance": 1}));
+    for n in 0..3 {
+        s.befehl(0, "sketch.create", json!({"plane": "XZ", "name": format!("Anna {n}")}));
+        s.befehl(0, "sketch.finish", json!({}));
+        s.sende(0);
+        s.sende(1);
+        // Deliver to the server only: Anna's set first, then Bert's (refused); then the answers.
+        while let Some((v, n)) = s.an_server.pop_front() {
+            let out = s.server.empfange(v, n);
+            s.verteile(out);
+        }
+        for i in [0, 1] {
+            while let Some(n) = s.an_client[i].pop_front() {
+                s.clients[i].empfange(n);
+            }
+            let m = s.clients[i].meldungen();
+            s.meldungen[i].extend(m);
+        }
+    }
+    s.ruhe();
+    assert!(s.hat_meldung(1, "nicht übernommen: die Schritt-Nummer war 3 Mal schon vergeben"), "{:?}", s.meldungen[1]);
+    for i in 0..2 {
+        assert!(!s.clients[i].teil().to_json().to_lowercase().contains("chamfer"), "client {i}");
+    }
+    s.alle_gleich();
+}
+
+#[test]
 fn a_sketch_is_locked_while_someone_works_in_it() {
     let mut s = Sim::neu(&["Anna", "Bert"]);
     let bohrbild = schritt_id(s.clients[0].teil(), "Bohrbild");
