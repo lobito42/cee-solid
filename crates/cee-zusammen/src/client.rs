@@ -28,6 +28,8 @@ pub const MAX_RUECKGAENGIG: usize = 200;
 /// One of the client's own sets, not yet confirmed.
 struct Offen {
     nr: u64,
+    /// The newest confirmed state when the command ran (what the person had seen).
+    gesehen: u64,
     /// The changes, made on the state shown when the command ran.
     aenderungen: Vec<Aenderung>,
     /// The set as sent (from a confirmed state), once it is on the way.
@@ -182,7 +184,7 @@ impl Client {
         if self.rueck.len() > MAX_RUECKGAENGIG {
             self.rueck.remove(0);
         }
-        self.warten.push_back(Offen { nr, aenderungen: satz.aenderungen, gesendet: None });
+        self.warten.push_back(Offen { nr, gesehen: self.seq, aenderungen: satz.aenderungen, gesendet: None });
         self.ansicht = nachher;
         Ok(text)
     }
@@ -225,7 +227,7 @@ impl Client {
             } else {
                 self.rueck.push(gegen);
             }
-            self.warten.push_back(Offen { nr, aenderungen: satz.aenderungen, gesendet: None });
+            self.warten.push_back(Offen { nr, gesehen: self.seq, aenderungen: satz.aenderungen, gesendet: None });
             self.ansicht = neu;
             self.session_nachziehen();
             return Ok(text);
@@ -268,7 +270,7 @@ impl Client {
                     self.vergiss(offen.nr);
                 }
                 Ok(satz) => {
-                    let n = AnServer::Aenderungen { basis: self.seq, nr: offen.nr, satz: satz.clone() };
+                    let n = AnServer::Aenderungen { basis: self.seq, gesehen: offen.gesehen, nr: offen.nr, satz: satz.clone() };
                     offen.gesendet = Some(satz);
                     self.unterwegs = Some(offen);
                     return Some(n);

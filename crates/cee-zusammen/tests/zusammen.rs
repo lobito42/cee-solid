@@ -318,7 +318,7 @@ fn a_set_that_does_not_fit_is_refused_and_the_sender_is_put_right() {
     let mut satz = cee_aenderung::berechne(stand, &anders).expect("set");
     satz.ausgangsstand = "sha256:00".into();
     let vorher = s.server.stand(TEIL).map(|(d, q)| (d.to_json(), q)).expect("part");
-    s.schicke(1, AnServer::Aenderungen { basis: seq, nr: 1000, satz });
+    s.schicke(1, AnServer::Aenderungen { basis: seq, gesehen: seq, nr: 1000, satz });
     s.ruhe();
     assert!(s.hat_meldung(1, "Abgelehnt: der Satz passt nicht"), "{:?}", s.meldungen[1]);
     assert_eq!(s.server.stand(TEIL).map(|(d, q)| (d.to_json(), q)).expect("part"), vorher, "the server changed nothing");
@@ -398,6 +398,22 @@ fn presence_travels_and_leaves_with_the_person() {
     s.ruhe();
     assert!(s.clients[1].personen().next().is_none());
     assert!(s.hat_meldung(1, "Anna ist gegangen"), "{:?}", s.meldungen[1]);
+}
+
+#[test]
+fn the_same_parameter_changed_offline_the_later_arrival_wins_with_a_notice() {
+    let mut s = Sim::neu(&["Anna", "Bert"]);
+    s.trenne(1);
+    s.groesse(1, "dicke", "12 mm");
+    s.groesse(0, "dicke", "9 mm");
+    s.ruhe();
+    s.verbinde(1);
+    s.ruhe();
+    for i in 0..2 {
+        assert_eq!(s.wert(i, "dicke"), "12 mm", "client {i}");
+    }
+    assert!(s.hat_meldung(0, "Hinweis: Bert hat gleichzeitig die Größe „dicke“ (jetzt 12 mm) geändert"), "{:?}", s.meldungen[0]);
+    s.alle_gleich();
 }
 
 /// The same over TCP: a server on a free port, two connections.

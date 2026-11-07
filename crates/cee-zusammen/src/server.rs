@@ -136,7 +136,7 @@ impl Server {
                 };
                 let Some(s) = self.sitzungen.get_mut(&teil) else { return Vec::new() };
                 match other {
-                    AnServer::Aenderungen { basis, nr, satz } => aenderungen(s, v, client, basis, nr, satz),
+                    AnServer::Aenderungen { basis, gesehen, nr, satz } => aenderungen(s, v, client, basis, gesehen.min(basis), nr, satz),
                     AnServer::Anwesenheit { auswahl } => {
                         if let Some(t) = s.teilnehmer.get_mut(&client) {
                             t.auswahl = auswahl.iter().take(MAX_AUSWAHL).map(|a| gesaeubert(a, MAX_AUSWAHL)).collect();
@@ -238,7 +238,7 @@ fn sperre(s: &mut Sitzung, v: Verbindung, client: u64, skizze: Option<u64>) -> V
     s.person(client).map(|p| s.an_alle(&AnClient::Person(p))).unwrap_or_default()
 }
 
-fn aenderungen(s: &mut Sitzung, v: Verbindung, client: u64, basis: u64, nr: u64, satz: Aenderungssatz) -> Vec<Ausgang> {
+fn aenderungen(s: &mut Sitzung, v: Verbindung, client: u64, basis: u64, gesehen: u64, nr: u64, satz: Aenderungssatz) -> Vec<Ausgang> {
     let Some(t) = s.teilnehmer.get_mut(&client) else { return Vec::new() };
     if nr <= t.erledigt {
         // Sent again after a dropped connection: already dealt with.
@@ -246,7 +246,7 @@ fn aenderungen(s: &mut Sitzung, v: Verbindung, client: u64, basis: u64, nr: u64,
     }
     t.erledigt = nr;
     match pruefe_und_wende_an(s, client, basis, &satz) {
-        Ok(neu) => annehmen(s, client, nr, neu, basis),
+        Ok(neu) => annehmen(s, client, nr, neu, gesehen),
         Err(grund) => vec![(v, AnClient::Abgelehnt { nr, grund, seq: s.seq, teil: s.baum.clone() })],
     }
 }
@@ -285,7 +285,7 @@ fn erster_stand(s: &Sitzung) -> u64 {
     s.journal.front().map_or(s.seq, |e| e.bestaetigt.seq.saturating_sub(1))
 }
 
-fn annehmen(s: &mut Sitzung, client: u64, nr: u64, neu: Document, basis: u64) -> Vec<Ausgang> {
+fn annehmen(s: &mut Sitzung, client: u64, nr: u64, neu: Document, gesehen: u64) -> Vec<Ausgang> {
     let (wirksam, neu_baum) = match (berechne(&s.teil, &neu), baum(&neu)) {
         (Ok(w), Ok(b)) => (w, b),
         (Err(e), _) | (_, Err(e)) => {
@@ -296,11 +296,11 @@ fn annehmen(s: &mut Sitzung, client: u64, nr: u64, neu: Document, basis: u64) ->
     let ziele: Vec<String> = wirksam.aenderungen.iter().map(ziel).filter(|z| z != "teil/next_id").collect();
     let mut out = Vec::new();
     // Who made a change this set overwrites without the sender having seen it gets a notice.
-    if basis < s.seq {
+    if gesehen < s.seq {
         let autor_name = s.name(client);
         let mut betroffen: BTreeMap<u64, Vec<String>> = BTreeMap::new();
         for e in &s.journal {
-            if e.bestaetigt.seq <= basis || e.bestaetigt.autor == client {
+            if e.bestaetigt.seq <= gesehen || e.bestaetigt.autor == client {
                 continue;
             }
             for z in &ziele {

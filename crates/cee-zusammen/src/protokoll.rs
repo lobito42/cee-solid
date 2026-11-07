@@ -37,8 +37,10 @@ pub enum AnServer {
     /// Join the session of one part (`teil`); `wieder` when coming back.
     Hallo { protokoll: u32, teil: String, name: String, wieder: Option<Wieder> },
     /// One user action: the change set from the state with sequence number `basis`. `nr` counts
-    /// the client's sets (it only grows), so a set sent twice is taken once.
-    Aenderungen { basis: u64, nr: u64, satz: Aenderungssatz },
+    /// the client's sets (it only grows), so a set sent twice is taken once. `gesehen` is the
+    /// newest state the person had seen when they acted (at most `basis`): whoever changed the same
+    /// thing after that gets a notice, also when the set was made again on a newer state.
+    Aenderungen { basis: u64, gesehen: u64, nr: u64, satz: Aenderungssatz },
     /// What the person has selected (ephemeral, latest wins).
     Anwesenheit { auswahl: Vec<String> },
     /// Work in the sketch with this step id (lock it), or leave it (`None`).
