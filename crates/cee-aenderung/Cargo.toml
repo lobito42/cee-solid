@@ -1,0 +1,26 @@
+[package]
+name = "cee-aenderung"
+description = "CEE: change sets (Änderungssätze) between two states of a SolidCraft design: compute, apply, read aloud"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "cee-aenderung"
+path = "src/bin/cee-aenderung.rs"
+
+[dependencies]
+solidcraft-doc = { workspace = true }
+solidcraft-io = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# Builds the test designs from command lists with the built-in session.
+solidcraft-engine = { workspace = true }
