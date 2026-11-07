@@ -9,8 +9,9 @@
 //! travels: every client computes it with SolidCraft's own engine.
 //!
 //! The parts are pure logic ([`server::Server`], [`client::Client`]); [`netz`] moves the messages
-//! over TCP. The method follows FigCraft's collaboration (see ATTRIBUTION); no code is copied.
+//! over TCP; [`ablage`] keeps the shared state in a new file when the server ends. The method follows FigCraft's collaboration (see ATTRIBUTION); no code is copied.
 
+pub mod ablage;
 pub mod client;
 pub mod netz;
 pub mod protokoll;

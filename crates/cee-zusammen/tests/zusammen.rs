@@ -513,3 +513,62 @@ fn over_tcp_two_clients_end_on_the_same_bytes() {
     assert!(a == b, "the two clients differ");
     assert!(a.contains("\"10 mm\"") && a.contains("\"80 mm\""));
 }
+
+/// The server program: at the end the shared state is in a new file, the source is untouched.
+#[test]
+fn the_server_keeps_the_shared_state_in_a_new_file_and_leaves_the_source_alone() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    let dir = std::env::temp_dir().join(format!("cee-zusammen-ablage-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let quelle = dir.join("winkelhalter.sc");
+    let original = include_bytes!("../../cee-aenderung/examples/winkelhalter.sc");
+    std::fs::write(&quelle, original).expect("source");
+    let mut server = Command::new(env!("CARGO_BIN_EXE_cee-zusammen"))
+        .args(["serve", "--port", "0", "--teil", &format!("{TEIL}={}", quelle.display())])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("server starts");
+    let mut zeilen = BufReader::new(server.stdout.take().expect("stdout")).lines();
+    let erste = zeilen.next().expect("a line").expect("text");
+    let adresse = erste.split("Server auf ").nth(1).and_then(|r| r.split(' ').next()).expect("address").to_owned();
+
+    // Anna changes the thickness over TCP.
+    let (tx, rx) = kanal();
+    let mut leitung = Leitung::oeffne(&adresse, tx, |e| e).expect("connect");
+    let mut anna = Client::neu("Anna", TEIL);
+    leitung.sende(&anna.hallo()).expect("hello");
+    let empfang = |c: &mut Client, rx: &std::sync::mpsc::Receiver<Ereignis>| {
+        if let Ok(Ereignis::Nachricht(m)) = rx.recv_timeout(Duration::from_secs(20)) {
+            c.empfange(m);
+        }
+    };
+    empfang(&mut anna, &rx);
+    anna.befehl("parameters.change", &json!({"name": "dicke", "expression": "11 mm"})).expect("change");
+    while let Some(m) = anna.ausgehend() {
+        leitung.sende(&m).expect("send");
+    }
+    let start = Instant::now();
+    while anna.offen() > 0 && start.elapsed() < Duration::from_secs(20) {
+        empfang(&mut anna, &rx);
+    }
+    leitung.schliesse();
+
+    server.stdin.take().expect("stdin").write_all(b"ende\n").expect("ende");
+    let rest: Vec<String> = zeilen.map_while(Result::ok).collect();
+    assert!(server.wait().expect("server ends").success());
+    let gemeldet = rest.iter().find(|z| z.contains("gemeinsamer Stand in")).unwrap_or_else(|| panic!("{rest:?}"));
+
+    assert_eq!(std::fs::read(&quelle).expect("source"), original, "the source file is unchanged");
+    let neu: Vec<_> = std::fs::read_dir(&dir).expect("dir").flatten().map(|e| e.path()).filter(|p| *p != quelle).collect();
+    assert_eq!(neu.len(), 1, "{neu:?}");
+    let name = neu[0].file_name().and_then(|n| n.to_str()).expect("name").to_owned();
+    assert!(name.starts_with("winkelhalter.") && name.ends_with(".sc") && name.len() == "winkelhalter.20261107-115045.sc".len(), "{name}");
+    assert!(gemeldet.contains(&name), "{gemeldet}");
+    let gesichert = solidcraft_io::read_design(&std::fs::read(&neu[0]).expect("saved")).expect("readable");
+    assert_eq!(gesichert.params.iter().find(|p| p.name == "dicke").map(|p| p.expr.as_str()), Some("11 mm"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -2,19 +2,22 @@
 //!
 //! ```text
 //! cee-zusammen serve [--port 7878] --teil winkelhalter=crates/cee-aenderung/examples/winkelhalter.sc
+//!   (`ende` ends it; the shared state is then in `winkelhalter.<time>.sc` next to the source)
 //! cee-zusammen verbinde winkelhalter --name Anna [--server 127.0.0.1:7878] [--zuschauen]
 //! ```
 //!
 //! After `verbinde`, type `hilfe` for the commands.
 
+use std::collections::BTreeMap;
 use std::io::BufRead;
+use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
 use std::thread;
 
 use cee_zusammen::netz::{Ereignis, Leitung, starte};
 use cee_zusammen::protokoll::AnServer;
-use cee_zusammen::{Client, Server};
+use cee_zusammen::{Client, Server, ablage};
 use serde_json::{Value, json};
 use solidcraft_doc::Document;
 
@@ -64,19 +67,57 @@ fn serve(args: &[String]) -> Result<(), String> {
             let (name, pfad) = spec.split_once('=').ok_or("--teil <name>=<datei.sc>")?;
             let bytes = std::fs::read(pfad).map_err(|e| format!("{pfad}: {e}"))?;
             let teil = solidcraft_io::read_design(&bytes).map_err(|e| format!("{pfad}: {e}"))?;
-            teile.push((name.to_owned(), teil));
+            teile.push((name.to_owned(), teil, PathBuf::from(pfad)));
         }
     }
     if teile.is_empty() {
         return Err("mindestens ein Teil angeben: --teil <name>=<datei.sc>".into());
     }
-    let server = Server::neu(teile)?;
+    let quellen: BTreeMap<String, PathBuf> = teile.iter().map(|(n, _, p)| (n.clone(), p.clone())).collect();
+    let server = Server::neu(teile.into_iter().map(|(n, t, _)| (n, t)).collect())?;
     let namen = server.teile().join(", ");
     let laufend = starte(&format!("127.0.0.1:{port}"), server)?;
     println!("cee-zusammen: Server auf {} mit den Teilen: {namen}", laufend.adresse);
-    println!("Beenden mit Strg+C. Nichts wird gespeichert; der Stand lebt, solange der Server läuft.");
+    println!("Beenden mit „ende“ und Enter: der gemeinsame Stand kommt in eine neue Datei neben der Ausgangsdatei;");
+    println!("die Ausgangsdatei bleibt unverändert. Bis dahin wird nach jeder Änderung dorthin gesichert.");
+    // One new file per part, named once at the start; it holds the latest shared state.
+    let jetzt = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let mut ablage: BTreeMap<String, (PathBuf, Option<u64>)> =
+        quellen.iter().map(|(n, p)| (n.clone(), (ablage::neuer_pfad(p, jetzt), None))).collect();
+    let (tx, rx) = channel::<Option<String>>();
+    thread::spawn(move || {
+        for zeile in std::io::stdin().lock().lines() {
+            let Ok(z) = zeile else { break };
+            if tx.send(Some(z)).is_err() {
+                return;
+            }
+        }
+        let _ = tx.send(None);
+    });
     loop {
-        thread::park();
+        let ende = match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(Some(z)) => matches!(z.trim(), "ende" | "exit" | "quit"),
+            Ok(None) | Err(RecvTimeoutError::Disconnected) => true,
+            Err(RecvTimeoutError::Timeout) => false,
+        };
+        for (name, teil, seq) in laufend.staende() {
+            let Some((pfad, gesichert)) = ablage.get_mut(&name) else { continue };
+            // Saved after each change, and at the end in any case.
+            if *gesichert != Some(seq) && (seq > 0 || ende) {
+                match ablage::schreibe(pfad, &teil) {
+                    Ok(()) => *gesichert = Some(seq),
+                    Err(e) => eprintln!("Sichern ging nicht: {e}"),
+                }
+            }
+        }
+        if ende {
+            for (name, (pfad, gesichert)) in &ablage {
+                if gesichert.is_some() {
+                    println!("{name}: gemeinsamer Stand in {}", pfad.display());
+                }
+            }
+            return Ok(());
+        }
     }
 }
 

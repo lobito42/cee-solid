@@ -11,6 +11,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
+use solidcraft_doc::Document;
+
 use crate::protokoll::{AnClient, AnServer, MAX_ZEILE, lies_zeile, zeile};
 use crate::server::{Ausgang, Server, Verbindung};
 
@@ -56,6 +58,15 @@ impl Netz {
 /// A running server: where it listens.
 pub struct Laufend {
     pub adresse: SocketAddr,
+    netz: Arc<Netz>,
+}
+
+impl Laufend {
+    /// The current state of every part: name, design, sequence number.
+    pub fn staende(&self) -> Vec<(String, Document, u64)> {
+        let server = sperre(&self.netz.server);
+        server.teile().into_iter().filter_map(|t| server.stand(&t).map(|(d, seq)| (t.clone(), d.clone(), seq))).collect()
+    }
 }
 
 /// Listen on `adresse` and serve in background threads. Returns once listening.
@@ -63,6 +74,7 @@ pub fn starte(adresse: &str, server: Server) -> Result<Laufend, String> {
     let listener = TcpListener::bind(adresse).map_err(|e| format!("{adresse}: {e}"))?;
     let adresse = listener.local_addr().map_err(|e| e.to_string())?;
     let netz = Arc::new(Netz { server: Mutex::new(server), schreiber: Mutex::new(BTreeMap::new()) });
+    let laufend = Laufend { adresse, netz: netz.clone() };
     thread::Builder::new()
         .name("cee-zusammen-annehmen".into())
         .spawn(move || {
@@ -73,7 +85,7 @@ pub fn starte(adresse: &str, server: Server) -> Result<Laufend, String> {
             }
         })
         .map_err(|e| e.to_string())?;
-    Ok(Laufend { adresse })
+    Ok(laufend)
 }
 
 fn verbindung(netz: &Netz, v: Verbindung, stream: TcpStream) {
