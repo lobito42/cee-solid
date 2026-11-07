@@ -1,0 +1,7 @@
+| File | Author | Source | Licence |
+|---|---|---|---|
+| crates/cee-zusammen/src/protokoll.rs | CEE contributors | Message shapes (hello, changes with base sequence number and batch id, accepted changes to everyone, reject with the current state, presence, resume with catch-up) after FigCraft docs/collab-protocol.md and crates/collab/src/message.rs (https://github.com/storytold/figcraft); idea only, no code copied | MIT OR Apache-2.0 |
+| crates/cee-zusammen/src/server.rs | CEE contributors | Server ordering, validating a batch whole on a copy, last writer wins for batches on an older state, after FigCraft crates/collab/src/server.rs; idea only, no code copied | MIT OR Apache-2.0 |
+| crates/cee-zusammen/src/client.rs | CEE contributors | Confirmed state plus own pending batches replayed leniently, per-user undo of what nobody changed since, offline queue and reconnect, after FigCraft crates/collab/src/client.rs and crates/collab/src/history.rs; idea only, no code copied | MIT OR Apache-2.0 |
+| crates/cee-zusammen/src/vereinen.rs | CEE contributors | Lenient replay and undo rules after FigCraft crates/collab/src/replica.rs and docs/collab-protocol.md ("Undo and redo"); idea only, no code copied | MIT OR Apache-2.0 |
+| crates/cee-zusammen/src/netz.rs | CEE contributors | Blocking sockets and plain threads instead of an async runtime, as FigCraft crates/collab-net does; idea only, no code copied | MIT OR Apache-2.0 |
