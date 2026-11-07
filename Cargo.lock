@@ -732,6 +732,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cee-zusammen"
+version = "0.40.0-rc.2"
+dependencies = [
+ "cee-aenderung",
+ "serde",
+ "serde_json",
+ "solidcraft-doc",
+ "solidcraft-engine",
+ "solidcraft-io",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
