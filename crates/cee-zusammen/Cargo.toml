@@ -1,0 +1,22 @@
+[package]
+name = "cee-zusammen"
+description = "CEE: working on one SolidCraft design together (server ordering, change sets, presence, sketch locks, own undo, offline catch-up)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "cee-zusammen"
+path = "src/bin/cee-zusammen.rs"
+
+[dependencies]
+cee-aenderung = { path = "../cee-aenderung" }
+solidcraft-doc = { workspace = true }
+solidcraft-engine = { workspace = true }
+solidcraft-io = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
